@@ -91,12 +91,11 @@ public class TimeMillisToStringTransform<R extends ConnectRecord<R>> implements 
             return record;
         }
 
-        if (!(record.value() instanceof Struct)) {
+        if (!(record.value() instanceof Struct value)) {
             return record;
         }
 
-        Schema schema = record.valueSchema();
-        Struct value = (Struct) record.value();
+        var schema = record.valueSchema();
 
         if (!hasTimeMillisFields(schema)) {
             return record;
@@ -135,32 +134,26 @@ public class TimeMillisToStringTransform<R extends ConnectRecord<R>> implements 
     }
 
     private boolean hasTimeMillisFields(Schema schema) {
-        for (Field field : schema.fields()) {
-            if (shouldConvertField(field)) {
-                return true;
-            }
-        }
-        return false;
+        return schema.fields().stream().anyMatch(this::shouldConvertField);
     }
 
     private Schema getOrBuildSchema(Schema originalSchema) {
-        Schema cached = schemaUpdateCache.get(originalSchema);
+        var cached = schemaUpdateCache.get(originalSchema);
         if (cached != null) {
             return cached;
         }
 
-        SchemaBuilder builder = SchemaUtil.copySchemaBasics(originalSchema, SchemaBuilder.struct());
-        for (Field field : originalSchema.fields()) {
+        var builder = SchemaUtil.copySchemaBasics(originalSchema, SchemaBuilder.struct());
+        originalSchema.fields().forEach(field -> {
             if (shouldConvertField(field)) {
-                if (field.schema().isOptional()) {
-                    builder.field(field.name(), SchemaBuilder.string().optional().build());
-                } else {
-                    builder.field(field.name(), Schema.STRING_SCHEMA);
-                }
+                var fieldSchema = field.schema().isOptional()
+                        ? SchemaBuilder.string().optional().build()
+                        : Schema.STRING_SCHEMA;
+                builder.field(field.name(), fieldSchema);
             } else {
                 builder.field(field.name(), field.schema());
             }
-        }
+        });
 
         Schema updatedSchema = builder.build();
         schemaUpdateCache.put(originalSchema, updatedSchema);
@@ -170,30 +163,22 @@ public class TimeMillisToStringTransform<R extends ConnectRecord<R>> implements 
     private Struct buildUpdatedValue(Schema originalSchema, Schema updatedSchema, Struct originalValue) {
         Struct updatedValue = new Struct(updatedSchema);
 
-        for (Field field : originalSchema.fields()) {
-            Object rawValue = originalValue.get(field);
-
-            if (shouldConvertField(field)) {
-                if (rawValue == null) {
-                    updatedValue.put(field.name(), null);
-                } else {
-                    int millis;
-                    if (rawValue instanceof Integer) {
-                        millis = (Integer) rawValue;
-                    } else if (rawValue instanceof Long) {
-                        millis = ((Long) rawValue).intValue();
-                    } else if (rawValue instanceof java.util.Date) {
-                        millis = (int) (((java.util.Date) rawValue).getTime() % 86400000L);
-                    } else {
-                        LOG.warn("Field '{}' has unexpected type {}, passing through as string",
-                                field.name(), rawValue.getClass().getName());
-                        updatedValue.put(field.name(), rawValue.toString());
-                        continue;
-                    }
-                    updatedValue.put(field.name(), formatMillisSinceMidnight(millis));
-                }
-            } else {
+        for (var field : originalSchema.fields()) {
+            var rawValue = originalValue.get(field);
+            if (!shouldConvertField(field)) {
                 updatedValue.put(field.name(), rawValue);
+            } else if (rawValue == null) {
+                updatedValue.put(field.name(), (String) null);
+            } else if (rawValue instanceof Integer i) {
+                updatedValue.put(field.name(), formatMillisSinceMidnight(i));
+            } else if (rawValue instanceof Long l) {
+                updatedValue.put(field.name(), formatMillisSinceMidnight(l.intValue()));
+            } else if (rawValue instanceof java.util.Date d) {
+                updatedValue.put(field.name(), formatMillisSinceMidnight((int) (d.getTime() % 86400000L)));
+            } else {
+                LOG.warn("Field '{}' has unexpected type {}, passing through as string",
+                        field.name(), rawValue.getClass().getName());
+                updatedValue.put(field.name(), rawValue.toString());
             }
         }
 
@@ -230,21 +215,18 @@ public class TimeMillisToStringTransform<R extends ConnectRecord<R>> implements 
 
     @Override
     public void configure(Map<String, ?> configs) {
-        Object fieldsObj = configs.get(FIELDS_CONFIG);
-        String fieldsStr = fieldsObj != null ? fieldsObj.toString() : "";
-        if (!fieldsStr.trim().isEmpty()) {
-            targetFields = new HashSet<>(Arrays.asList(fieldsStr.split("\\s*,\\s*")));
-        } else {
-            targetFields = Collections.emptySet();
-        }
+        var fieldsObj = configs.get(FIELDS_CONFIG);
+        var fieldsStr = fieldsObj != null ? fieldsObj.toString().trim() : "";
+        targetFields = fieldsStr.isEmpty()
+                ? Collections.emptySet()
+                : new HashSet<>(Arrays.asList(fieldsStr.split("\\s*,\\s*")));
 
-        Object formatObj = configs.get(FORMAT_CONFIG);
-        format = formatObj != null ? formatObj.toString() : FORMAT_HH_MM_SS;
-        if (format.trim().isEmpty()) {
-            format = FORMAT_HH_MM_SS;
-        }
+        var formatObj = configs.get(FORMAT_CONFIG);
+        format = formatObj != null && !formatObj.toString().trim().isEmpty()
+                ? formatObj.toString().trim()
+                : FORMAT_HH_MM_SS;
 
-        schemaUpdateCache = new SynchronizedCache<>(new LRUCache<Schema, Schema>(16));
+        schemaUpdateCache = new SynchronizedCache<>(new LRUCache<>(16));
 
         LOG.info("TimeMillisToStringTransform configured: fields={}, format={}",
                 targetFields.isEmpty() ? "(auto-detect time-millis)" : targetFields, format);

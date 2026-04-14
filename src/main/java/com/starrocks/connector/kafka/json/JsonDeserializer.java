@@ -18,7 +18,7 @@ package com.starrocks.connector.kafka.json;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.serialization.Deserializer;
@@ -31,7 +31,7 @@ import java.util.Set;
  * structured data without having associated Java classes. This deserializer also supports Connect schemas.
  */
 public class JsonDeserializer implements Deserializer<JsonNode> {
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final JsonMapper jsonMapper = new JsonMapper();
 
     /**
      * Default constructor needed by Kafka
@@ -45,14 +45,14 @@ public class JsonDeserializer implements Deserializer<JsonNode> {
      * for the deserializer
      *
      * @param deserializationFeatures the specified deserialization features
-     * @param jsonNodeFactory the json node factory to use.
+     * @param jsonNodeFactory         the json node factory to use.
      */
     JsonDeserializer(
-        final Set<DeserializationFeature> deserializationFeatures,
-        final JsonNodeFactory jsonNodeFactory
+            final Set<DeserializationFeature> deserializationFeatures,
+            final JsonNodeFactory jsonNodeFactory
     ) {
-        deserializationFeatures.forEach(objectMapper::enable);
-        objectMapper.setNodeFactory(jsonNodeFactory);
+        deserializationFeatures.forEach(jsonMapper::enable);
+        jsonMapper.setNodeFactory(jsonNodeFactory);
     }
 
     @Override
@@ -62,7 +62,7 @@ public class JsonDeserializer implements Deserializer<JsonNode> {
 
         JsonNode data;
         try {
-            data = objectMapper.readTree(bytes);
+            data = jsonMapper.readTree(bytes);
         } catch (Exception e) {
             throw new SerializationException(e);
         }

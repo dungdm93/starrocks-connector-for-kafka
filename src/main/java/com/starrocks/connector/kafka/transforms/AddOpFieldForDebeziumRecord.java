@@ -27,7 +27,6 @@ import org.apache.kafka.common.cache.LRUCache;
 import org.apache.kafka.common.cache.SynchronizedCache;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.connect.connector.ConnectRecord;
-import org.apache.kafka.connect.data.Field;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaBuilder;
 import org.apache.kafka.connect.data.Struct;
@@ -36,6 +35,7 @@ import org.apache.kafka.connect.transforms.Transformation;
 import org.apache.kafka.connect.transforms.util.SchemaUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import java.util.Map;
 
 // This class is a transform class that users use when they need load debezium data and SR's table model is PK.
@@ -59,6 +59,13 @@ public class AddOpFieldForDebeziumRecord<R extends ConnectRecord<R>> implements 
     private Cache<Schema, Schema> schemaUpdateCache;
 
     @Override
+    public void configure(Map<String, ?> configs) {
+        final Configuration config = Configuration.from(configs);
+        smtManager = new SmtManager<>(config);
+        schemaUpdateCache = new SynchronizedCache<>(new LRUCache<>(16));
+    }
+
+    @Override
     public R apply(R record) {
         if (record.value() == null) {
             return record;
@@ -66,10 +73,9 @@ public class AddOpFieldForDebeziumRecord<R extends ConnectRecord<R>> implements 
         if (!smtManager.isValidEnvelope(record)) {
             return record;
         }
-        if (!(record.value() instanceof Struct)) {
+        if (!(record.value() instanceof Struct value)) {
             return record;
         }
-        Struct value = (Struct) record.value();
         // debezium data format:
         //  {
         //     op: "",
@@ -85,10 +91,10 @@ public class AddOpFieldForDebeziumRecord<R extends ConnectRecord<R>> implements 
                 return record;
             }
             if (op.equals(OP_C) || op.equals(OP_U)) {
-                Struct newValue = updateValue(value, AFTER);
+                var newValue = updateValue(value, AFTER);
                 return record.newRecord(record.topic(), record.kafkaPartition(), record.keySchema(), record.key(), newValue.schema(), newValue, record.timestamp());
             } else if (op.equals(OP_D)) {
-                Struct newValue = updateValue(value, BEFORE);
+                var newValue = updateValue(value, BEFORE);
                 return record.newRecord(record.topic(), record.kafkaPartition(), record.keySchema(), record.key(), newValue.schema(), newValue, record.timestamp());
             }
         } catch (Exception e) {
@@ -98,43 +104,31 @@ public class AddOpFieldForDebeziumRecord<R extends ConnectRecord<R>> implements 
     }
 
     private Struct updateValue(Struct value, String nestStructName) {
-        if (!(value.get(nestStructName) instanceof Struct)) {
+        if (!(value.get(nestStructName) instanceof Struct nest)) {
             throw new DataException("");
         }
-        Struct nest = (Struct) value.get(nestStructName);
-        Schema newNestSchema = makeUpdatedSchema(nest.schema());
-        final Struct newNest = new Struct(newNestSchema);
-        for (Field field : nest.schema().fields()) {
-            newNest.put(field.name(), nest.get(field));
-        }
+        var newNestSchema = makeUpdatedSchema(nest.schema());
+        var newNest = new Struct(newNestSchema);
+        nest.schema().fields().forEach(field -> newNest.put(field.name(), nest.get(field)));
         // Please reference to: https://docs.starrocks.io/zh-cn/latest/loading/Load_to_Primary_Key_tables
-        if (nestStructName.equals(AFTER)) {
-            newNest.put(OP_FIELD_NAME, 0);
-        } else {
-            newNest.put(OP_FIELD_NAME, 1);
-        }
-        Schema newValueSchema = makeUpdatedSchema(value.schema(), nestStructName, newNestSchema);
-        final Struct newValue = new Struct(newValueSchema);
-        for (Field field : newValueSchema.schema().fields()) {
+        newNest.put(OP_FIELD_NAME, nestStructName.equals(AFTER) ? 0 : 1);
+        var newValueSchema = makeUpdatedSchema(value.schema(), nestStructName, newNestSchema);
+        var newValue = new Struct(newValueSchema);
+        newValueSchema.schema().fields().forEach(field -> {
             if (field.name().equals(nestStructName)) {
                 newValue.put(field.name(), newNest);
-            } else {
-                if (value.get(field) == null) {
-                    continue;
-                }
+            } else if (value.get(field) != null) {
                 newValue.put(field.name(), value.get(field));
             }
-        }
+        });
         return newValue;
     }
 
     private Schema makeUpdatedSchema(Schema schema) {
-        Schema updatedSchema = schemaUpdateCache.get(schema);
-        if(updatedSchema == null) {
-            final SchemaBuilder builder = SchemaUtil.copySchemaBasics(schema, SchemaBuilder.struct());
-            for (Field field: schema.fields()) {
-                builder.field(field.name(), field.schema());
-            }
+        var updatedSchema = schemaUpdateCache.get(schema);
+        if (updatedSchema == null) {
+            var builder = SchemaUtil.copySchemaBasics(schema, SchemaBuilder.struct());
+            schema.fields().forEach(field -> builder.field(field.name(), field.schema()));
             builder.field(OP_FIELD_NAME, Schema.INT32_SCHEMA);
             updatedSchema = builder.build();
             schemaUpdateCache.put(schema, updatedSchema);
@@ -143,14 +137,14 @@ public class AddOpFieldForDebeziumRecord<R extends ConnectRecord<R>> implements 
     }
 
     private Schema makeUpdatedSchema(Schema schema, String fieldName, Schema fieldSchema) {
-        final SchemaBuilder builder = SchemaUtil.copySchemaBasics(schema, SchemaBuilder.struct());
-        for (Field field: schema.fields()) {
+        var builder = SchemaUtil.copySchemaBasics(schema, SchemaBuilder.struct());
+        schema.fields().forEach(field -> {
             if (field.name().equals(fieldName)) {
                 builder.field(fieldName, fieldSchema);
             } else {
                 builder.field(field.name(), field.schema());
             }
-        }
+        });
         return builder.build();
     }
 
@@ -162,12 +156,5 @@ public class AddOpFieldForDebeziumRecord<R extends ConnectRecord<R>> implements 
     @Override
     public void close() {
 
-    }
-
-    @Override
-    public void configure(Map<String, ?> configs) {
-        final Configuration config = Configuration.from(configs);
-        smtManager = new SmtManager<>(config);
-        schemaUpdateCache = new SynchronizedCache<>(new LRUCache<Schema, Schema>(16));
     }
 }

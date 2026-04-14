@@ -19,6 +19,7 @@ package com.starrocks.connector.kafka.json;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.serialization.Serializer;
@@ -31,7 +32,7 @@ import java.util.Set;
  * structured data without corresponding Java classes. This serializer also supports Connect schemas.
  */
 public class JsonSerializer implements Serializer<JsonNode> {
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final JsonMapper jsonMapper = new JsonMapper();
 
     /**
      * Default constructor needed by Kafka
@@ -51,8 +52,8 @@ public class JsonSerializer implements Serializer<JsonNode> {
         final Set<SerializationFeature> serializationFeatures,
         final JsonNodeFactory jsonNodeFactory
     ) {
-        serializationFeatures.forEach(objectMapper::enable);
-        objectMapper.setNodeFactory(jsonNodeFactory);
+        serializationFeatures.forEach(jsonMapper::enable);
+        jsonMapper.setNodeFactory(jsonNodeFactory);
     }
 
     @Override
@@ -61,7 +62,7 @@ public class JsonSerializer implements Serializer<JsonNode> {
             return null;
 
         try {
-            return objectMapper.writeValueAsBytes(data);
+            return jsonMapper.writeValueAsBytes(data);
         } catch (Exception e) {
             throw new SerializationException("Error serializing JSON message", e);
         }

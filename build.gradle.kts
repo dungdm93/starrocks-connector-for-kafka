@@ -25,6 +25,7 @@ dependencies {
     compileOnly("org.apache.kafka:connect-transforms")
 
     // Debezium dependencies
+    implementation("io.debezium:debezium-connect-plugins")
     implementation("io.debezium:debezium-connector-common")
 
     // Jackson dependencies
