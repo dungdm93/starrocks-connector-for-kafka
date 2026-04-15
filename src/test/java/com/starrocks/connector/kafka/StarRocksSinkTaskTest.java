@@ -21,8 +21,8 @@
 package com.starrocks.connector.kafka;
 
 import com.starrocks.connector.kafka.json.JsonConverter;
+import org.apache.kafka.connect.data.Decimal;
 import org.apache.kafka.connect.data.Schema;
-import org.apache.kafka.connect.data.SchemaAndValue;
 import org.apache.kafka.connect.data.SchemaBuilder;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.errors.DataException;
@@ -34,8 +34,8 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collections;
-import java.util.Map;
+import java.math.BigDecimal;
+import java.util.Base64;
 
 public class StarRocksSinkTaskTest {
 
@@ -53,13 +53,6 @@ public class StarRocksSinkTaskTest {
         before.put("id", (byte) 1);
         before.put("name", "myRecord");
         return new SinkRecord("dummy-topic", 0, null, null, recordSchema, before, 0);
-    }
-
-    private SchemaAndValue getConnectDataFromStr(String msg) {
-        JsonConverter jsonConverter = new JsonConverter();
-        Map<String, ?> conf = Collections.emptyMap();
-        jsonConverter.configure(conf, false);
-        return jsonConverter.toConnectData(TOPIC, msg.getBytes());
     }
 
     @Before
@@ -121,7 +114,7 @@ public class StarRocksSinkTaskTest {
         }
 
         {
-            JsonConverter jsonConverter = StarRocksSinkTask.createJsonConverter();
+            JsonConverter jsonConverter = new JsonConverter();
             sinkTask.setJsonConverter(jsonConverter);
             sinkTask.setSinkType(StarRocksSinkTask.SinkType.JSON);
             String value = "{\"name\":\"北京\",\"code\":1}";
@@ -131,7 +124,7 @@ public class StarRocksSinkTaskTest {
         }
 
         {
-            JsonConverter jsonConverter = StarRocksSinkTask.createJsonConverter();
+            JsonConverter jsonConverter = new JsonConverter();
             sinkTask.setJsonConverter(jsonConverter);
             sinkTask.setSinkType(StarRocksSinkTask.SinkType.JSON);
             SinkRecord sinkRecord = createCreateRecord();
@@ -142,13 +135,12 @@ public class StarRocksSinkTaskTest {
 
     @Test
     public void testDecimalRecord() {
-        // BigDecimal reference = new BigDecimal(new BigInteger("156"), 2);
-        // Payload is base64 encoded byte[]{0, -100}, which is the two's complement encoding of 156.
-        String msg = "{ \"schema\": { \"type\": \"bytes\", \"name\": \"org.apache.kafka.connect.data.Decimal\", \"version\": 1, \"parameters\": { \"scale\": \"2\" } }, \"payload\": \"AJw=\" }";
-        SchemaAndValue schemaAndValue = getConnectDataFromStr(msg);
-        SinkRecord sinkRecord = new SinkRecord(TOPIC, 0, null, null, schemaAndValue.schema(), schemaAndValue.value(), 0);
+        // Payload is base64 encoded byte[]{0, -100}, which is the two's complement encoding of 156 with scale=2 → 1.56
+        Schema schema = Decimal.schema(2);
+        BigDecimal decimal = Decimal.toLogical(schema, Base64.getDecoder().decode("AJw="));
+        SinkRecord sinkRecord = new SinkRecord(TOPIC, 0, null, null, schema, decimal, 0);
         StarRocksSinkTask sinkTask = new StarRocksSinkTask();
-        JsonConverter jsonConverter = StarRocksSinkTask.createJsonConverter();
+        JsonConverter jsonConverter = new JsonConverter();
         sinkTask.setJsonConverter(jsonConverter);
         sinkTask.setSinkType(StarRocksSinkTask.SinkType.JSON);
         String row = sinkTask.getRowFromSinkRecord(sinkRecord);
@@ -158,7 +150,7 @@ public class StarRocksSinkTaskTest {
     @Test
     public void testNullRecord() {
         StarRocksSinkTask sinkTask = new StarRocksSinkTask();
-        JsonConverter jsonConverter = StarRocksSinkTask.createJsonConverter();
+        JsonConverter jsonConverter = new JsonConverter();
         sinkTask.setJsonConverter(jsonConverter);
         sinkTask.setSinkType(StarRocksSinkTask.SinkType.JSON);
         final Struct value = new Struct(recordSchema);

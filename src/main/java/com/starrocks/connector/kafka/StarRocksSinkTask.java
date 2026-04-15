@@ -22,9 +22,7 @@ package com.starrocks.connector.kafka;
 
 import com.starrocks.connector.kafka.envelope.DebeziumEnvelope;
 import com.starrocks.connector.kafka.envelope.NoopEnvelope;
-import com.starrocks.connector.kafka.json.DecimalFormat;
 import com.starrocks.connector.kafka.json.JsonConverter;
-import com.starrocks.connector.kafka.json.JsonConverterConfig;
 import com.starrocks.data.load.stream.StreamLoadDataFormat;
 import com.starrocks.data.load.stream.properties.StreamLoadProperties;
 import com.starrocks.data.load.stream.properties.StreamLoadTableProperties;
@@ -193,16 +191,6 @@ public class StarRocksSinkTask extends SinkTask {
         return Util.VERSION;
     }
 
-    public static JsonConverter createJsonConverter() {
-        var converter = new JsonConverter();
-        converter.configure(Map.of(
-                JsonConverterConfig.SCHEMAS_ENABLE_CONFIG, false,
-                JsonConverterConfig.REPLACE_NULL_WITH_DEFAULT_CONFIG, false,
-                JsonConverterConfig.DECIMAL_FORMAT_CONFIG, DecimalFormat.NUMERIC.name()
-        ), false);
-        return converter;
-    }
-
     @Override
     public void start(Map<String, String> props) {
         LOG.info("Starrocks sink task starting. version is {}", Util.VERSION);
@@ -210,7 +198,7 @@ public class StarRocksSinkTask extends SinkTask {
         loadProperties = buildLoadProperties();
         loadManager = buildLoadManager(loadProperties);
         topic2Table = getTopicToTableMap(props);
-        jsonConverter = createJsonConverter();
+        jsonConverter = new JsonConverter();
         maxRetryTimes = Long.parseLong(props.getOrDefault(StarRocksSinkConnectorConfig.SINK_MAXRETRIES, "3"));
         transformation = new NoopEnvelope<>();
         var envelope = props.getOrDefault(StarRocksSinkConnectorConfig.ENVELOPE, "none").toLowerCase();
@@ -281,8 +269,7 @@ public class StarRocksSinkTask extends SinkTask {
             return row;
         } else {
             try {
-                var b = jsonConverter.fromConnectData(sinkRecord.topic(), sinkRecord.valueSchema(), sinkRecord.value());
-                return new String(b);
+                return jsonConverter.fromConnectData(sinkRecord.valueSchema(), sinkRecord.value());
             } catch (DataException e) {
                 LOG.error(e.getMessage());
                 throw e;
@@ -407,9 +394,6 @@ public class StarRocksSinkTask extends SinkTask {
     public void stop() {
         if (loadManager != null) {
             loadManager.close();
-        }
-        if (jsonConverter != null) {
-            jsonConverter.close();
         }
         if (transformation != null) {
             transformation.close();
