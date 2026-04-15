@@ -189,6 +189,7 @@ public class StarRocksSinkTask extends SinkTask {
     public static JsonConverter createJsonConverter() {
         var converter = new JsonConverter();
         converter.configure(Map.of(
+                JsonConverterConfig.SCHEMAS_ENABLE_CONFIG, false,
                 JsonConverterConfig.REPLACE_NULL_WITH_DEFAULT_CONFIG, false,
                 JsonConverterConfig.DECIMAL_FORMAT_CONFIG, DecimalFormat.NUMERIC.name()
         ), false);
@@ -261,7 +262,8 @@ public class StarRocksSinkTask extends SinkTask {
             return row;
         } else {
             try {
-                return jsonConverter.convertToJson(sinkRecord.valueSchema(), sinkRecord.value()).toString();
+                var b = jsonConverter.fromConnectData(sinkRecord.topic(), sinkRecord.valueSchema(), sinkRecord.value());
+                return new String(b);
             } catch (DataException e) {
                 LOG.error(e.getMessage());
                 throw e;
