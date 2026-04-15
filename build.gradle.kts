@@ -13,6 +13,10 @@ java {
 
 repositories {
     mavenCentral()
+    maven {
+        name = "Confluent"
+        url = uri("https://packages.confluent.io/maven/")
+    }
 }
 
 dependencies {
@@ -21,8 +25,9 @@ dependencies {
     implementation(platform("io.debezium:debezium-bom:3.5.0.Final"))
 
     // Kafka Connect dependencies
-    compileOnly("org.apache.kafka:connect-api")
-    compileOnly("org.apache.kafka:connect-transforms")
+    implementation("org.apache.kafka:connect-api")
+    implementation("org.apache.kafka:connect-transforms")
+    implementation("org.apache.kafka:connect-runtime")
 
     // Debezium dependencies
     implementation("io.debezium:debezium-connect-plugins")
@@ -32,6 +37,11 @@ dependencies {
     implementation("com.fasterxml.jackson.core:jackson-core")
     implementation("com.fasterxml.jackson.core:jackson-databind")
     implementation("com.fasterxml.jackson.core:jackson-annotations")
+
+    implementation("ch.qos.logback:logback-classic:1.5.32")
+    implementation("io.confluent:kafka-connect-avro-converter:8.2.0") {
+        exclude(group="org.apache.kafka", module="*")
+    }
 
     // Other dependencies
     implementation("org.slf4j:slf4j-api:1.7.25")
