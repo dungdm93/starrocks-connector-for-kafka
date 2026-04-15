@@ -62,6 +62,16 @@ public class StarRocksSinkConnectorConfig {
     /// This configuration is used to specify line delimiters when writing `CSV` data to starrocks.
     public static final String SINK_PROPERTIES_ROW_DELIMITER = "sink.properties.row_delimiter";
 
+    /// The envelope format of incoming Kafka records.
+    /// Supported values: `none` (default), `debezium`.
+    /// When set to `debezium`, records are expected to be in Debezium CDC envelope format
+    /// and are unwrapped before being written to StarRocks.
+    public static final String ENVELOPE = "starrocks.envelope";
+
+    /// Specifies whether the connector processes DELETE or tombstone events
+    /// and removes the corresponding row from the database
+    public static final String DELETE_ENABLE = "starrocks.delete.enabled";
+
     /// The maximum size of data that can be loaded into StarRocks at a time.
     /// Valid values: 64 MB to 10 GB.
     /// The SDK buffer may buffer data from multiple streams,
@@ -131,11 +141,30 @@ public class StarRocksSinkConnectorConfig {
                 ).define(
                         SINK_FORMAT, Type.STRING, null,
                         new ConfigDef.NonEmptyString(),
-                        Importance.LOW,
+                        Importance.MEDIUM,
                         "write to starrocks data format",
                         GroupName,
                         0,
                         Width.NONE, SINK_FORMAT
+                ).define(
+                        ENVELOPE, Type.STRING, "none",
+                        ConfigDef.ValidString.in("none", "debezium"),
+                        Importance.MEDIUM,
+                        "envelope format of incoming records; 'none' (default) or 'debezium'",
+                        GroupName,
+                        0,
+                        Width.NONE, ENVELOPE
+                )
+                .define(
+                        DELETE_ENABLE, Type.BOOLEAN, false,
+                        null,
+                        Importance.MEDIUM,
+                        "Specifies whether the connector processes DELETE or tombstone events and " +
+                                "removes the corresponding row from the database. " +
+                                "Enable option requires target table is PRIMARY KEY table.",
+                        GroupName,
+                        0,
+                        Width.NONE, DELETE_ENABLE
                 ).define(
                         BUFFERFLUSH_MAXBYTES, Type.LONG, 67108864,
                         ConfigDef.Range.between(67108864, 10737418240L),

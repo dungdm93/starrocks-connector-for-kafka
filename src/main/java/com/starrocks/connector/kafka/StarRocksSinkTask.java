@@ -20,6 +20,8 @@
 
 package com.starrocks.connector.kafka;
 
+import com.starrocks.connector.kafka.envelope.DebeziumEnvelope;
+import com.starrocks.connector.kafka.envelope.NoopEnvelope;
 import com.starrocks.connector.kafka.json.DecimalFormat;
 import com.starrocks.connector.kafka.json.JsonConverter;
 import com.starrocks.connector.kafka.json.JsonConverterConfig;
@@ -27,11 +29,13 @@ import com.starrocks.data.load.stream.StreamLoadDataFormat;
 import com.starrocks.data.load.stream.properties.StreamLoadProperties;
 import com.starrocks.data.load.stream.properties.StreamLoadTableProperties;
 import com.starrocks.data.load.stream.v2.StreamLoadManagerV2;
+import io.debezium.transforms.ExtractNewRecordStateConfigDefinition.DeleteTombstoneHandling;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.sink.SinkTask;
+import org.apache.kafka.connect.transforms.Transformation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +43,8 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+
+import static io.debezium.transforms.ExtractNewRecordStateConfigDefinition.HANDLE_TOMBSTONE_DELETES;
 
 
 //  Please reference to: https://docs.confluent.io/platform/7.4/connect/javadocs/javadoc/org/apache/kafka/connect/sink/SinkTask.html
@@ -78,6 +84,7 @@ public class StarRocksSinkTask extends SinkTask {
     private long maxRetryTimes;
     private long retryCount = 0;
     private Throwable sdkException;
+    private Transformation<SinkRecord> transformation;
 
     private long buffMaxBytes;
     private long bufferFlushInterval;
@@ -205,6 +212,18 @@ public class StarRocksSinkTask extends SinkTask {
         topic2Table = getTopicToTableMap(props);
         jsonConverter = createJsonConverter();
         maxRetryTimes = Long.parseLong(props.getOrDefault(StarRocksSinkConnectorConfig.SINK_MAXRETRIES, "3"));
+        transformation = new NoopEnvelope<>();
+        var envelope = props.getOrDefault(StarRocksSinkConnectorConfig.ENVELOPE, "none").toLowerCase();
+        var deleteEnabled = props.getOrDefault(StarRocksSinkConnectorConfig.DELETE_ENABLE, "false").toLowerCase();
+        if ("debezium".equals(envelope)) {
+            transformation = new DebeziumEnvelope<>();
+            if (deleteEnabled.equals("true")) {
+                props.put(HANDLE_TOMBSTONE_DELETES.name(), DeleteTombstoneHandling.REWRITE.getValue());
+            } else {
+                props.put(HANDLE_TOMBSTONE_DELETES.name(), DeleteTombstoneHandling.DROP.getValue());
+            }
+            transformation.configure(props);
+        }
         LOG.info("Starrocks sink task started. version is {}", Util.VERSION);
     }
 
@@ -239,7 +258,7 @@ public class StarRocksSinkTask extends SinkTask {
     // 3. If the `valueSchema` of `sinkRecord` is null, it means that the received
     //    data does not have a defined schema. In this case, an attempt is made to
     //    parse it. If the parsing fails, a `DataException` exception will be thrown.
-    public String getRecordFromSinkRecord(SinkRecord sinkRecord) {
+    public String getRowFromSinkRecord(SinkRecord sinkRecord) {
         if (sinkRecord == null) {
             LOG.debug("Have got a null sink record");
             return null;
@@ -288,19 +307,25 @@ public class StarRocksSinkTask extends SinkTask {
         SinkRecord firstRecord = null;
         for (var r : records) {
             record = r;
+            var topic = record.topic();
             if (firstRecord == null) {
                 firstRecord = record;
             }
             LOG.debug("Received record: {}", record);
 
-            var topic = record.topic();
+            record = transformation.apply(record);
+            if (record == null) {
+                LOG.debug("Record filtered out by transformation");
+                continue;
+            }
+
             // The sdk does not provide the ability to clean up exceptions, that is to say, according to the current implementation of the SDK,
             // after an Exception occurs, the SDK must be re-initialized, which is based on flink:
             // 1. When an exception occurs, put will continue to fail, at which point we do nothing and let put move forward.
             // 2. Because the framework periodically calls the preCommit method, we can sense if an exception has occurred in
             //    this method. In the case of an exception, we initialize the new SDK and then throw an exception to the framework.
-            //    In this case, the framework repulls the data from the commit point and then moves forward.
-            String row = getRecordFromSinkRecord(record);
+            //    In this case, the framework re-pulls the data from the commit point and then moves forward.
+            var row = getRowFromSinkRecord(record);
             LOG.debug("Parsed row: {}", row);
             if (row == null) continue;
 
@@ -385,6 +410,9 @@ public class StarRocksSinkTask extends SinkTask {
         }
         if (jsonConverter != null) {
             jsonConverter.close();
+        }
+        if (transformation != null) {
+            transformation.close();
         }
         LOG.info("Starrocks sink task stopped. version is {}", Util.VERSION);
     }
