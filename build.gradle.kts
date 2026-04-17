@@ -48,10 +48,12 @@ dependencies {
     implementation("com.starrocks:starrocks-stream-load-sdk:1.0")
 
     // Test dependencies
-    testImplementation("junit:junit:4.12")
+    testImplementation(platform("org.junit:junit-bom:5.11.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("org.slf4j:slf4j-log4j12:1.7.25")
 }
 
 tasks.test {
-    useJUnit()
+    useJUnitPlatform()
 }

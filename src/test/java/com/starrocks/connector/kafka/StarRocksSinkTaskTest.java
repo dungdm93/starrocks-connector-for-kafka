@@ -27,10 +27,9 @@ import org.apache.kafka.connect.data.SchemaBuilder;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.sink.SinkRecord;
-import org.apache.log4j.PropertyConfigurator;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,11 +54,6 @@ public class StarRocksSinkTaskTest {
         return new SinkRecord("dummy-topic", 0, null, null, recordSchema, before, 0);
     }
 
-    @Before
-    public void setUp() {
-        PropertyConfigurator.configure("src/test/conf/log4j.properties");
-    }
-
     @Test
     public void testGetRowFromSinkRecord() {
         StarRocksSinkTask sinkTask = new StarRocksSinkTask();
@@ -67,21 +61,21 @@ public class StarRocksSinkTaskTest {
             sinkTask.setSinkType(StarRocksSinkTask.SinkType.CSV);
             SinkRecord sinkRecord = null;
             String row = sinkTask.getRowFromSinkRecord(sinkRecord);
-            Assert.assertNull(row);
+            assertNull(row);
         }
 
         {
             sinkTask.setSinkType(StarRocksSinkTask.SinkType.CSV);
             SinkRecord sinkRecord = new SinkRecord("dummy-topic", 0, null, null, null, null, 0);
             String row = sinkTask.getRowFromSinkRecord(sinkRecord);
-            Assert.assertNull(row);
+            assertNull(row);
         }
 
         {
             sinkTask.setSinkType(StarRocksSinkTask.SinkType.CSV);
             SinkRecord sinkRecord = new SinkRecord("dummy-topic", 0, null, null, null, "a,b,c", 0);
             String row = sinkTask.getRowFromSinkRecord(sinkRecord);
-            Assert.assertEquals("a,b,c", row);
+            assertEquals("a,b,c", row);
         }
 
         {
@@ -96,21 +90,21 @@ public class StarRocksSinkTaskTest {
             } catch (DataException e) {
                 errMsg = e.getMessage();
             }
-            Assert.assertTrue(errMsg.contains("cannot be cast to"));
+            assertTrue(errMsg.contains("cannot be cast to"));
         }
 
         {
             sinkTask.setSinkType(StarRocksSinkTask.SinkType.JSON);
             SinkRecord sinkRecord = null;
             String row = sinkTask.getRowFromSinkRecord(sinkRecord);
-            Assert.assertNull(row);
+            assertNull(row);
         }
 
         {
             sinkTask.setSinkType(StarRocksSinkTask.SinkType.JSON);
             SinkRecord sinkRecord = new SinkRecord("dummy-topic", 0, null, null, null, null, 0);
             String row = sinkTask.getRowFromSinkRecord(sinkRecord);
-            Assert.assertNull(row);
+            assertNull(row);
         }
 
         {
@@ -120,7 +114,7 @@ public class StarRocksSinkTaskTest {
             String value = "{\"name\":\"北京\",\"code\":1}";
             SinkRecord sinkRecord = new SinkRecord("dummy-topic", 0, null, null, null, value, 0);
             String row = sinkTask.getRowFromSinkRecord(sinkRecord);
-            Assert.assertEquals("\"{\\\"name\\\":\\\"北京\\\",\\\"code\\\":1}\"", row);
+            assertEquals("\"{\\\"name\\\":\\\"北京\\\",\\\"code\\\":1}\"", row);
         }
 
         {
@@ -129,7 +123,7 @@ public class StarRocksSinkTaskTest {
             sinkTask.setSinkType(StarRocksSinkTask.SinkType.JSON);
             SinkRecord sinkRecord = createCreateRecord();
             String row = sinkTask.getRowFromSinkRecord(sinkRecord);
-            Assert.assertEquals("{\"id\":1,\"name\":\"myRecord\"}", row);
+            assertEquals("{\"id\":1,\"name\":\"myRecord\"}", row);
         }
     }
 
@@ -144,7 +138,7 @@ public class StarRocksSinkTaskTest {
         sinkTask.setJsonConverter(jsonConverter);
         sinkTask.setSinkType(StarRocksSinkTask.SinkType.JSON);
         String row = sinkTask.getRowFromSinkRecord(sinkRecord);
-        Assert.assertEquals("1.56", row);
+        assertEquals("1.56", row);
     }
 
     @Test
@@ -158,6 +152,6 @@ public class StarRocksSinkTaskTest {
         value.put("name", null);
         SinkRecord sinkRecord = new SinkRecord(TOPIC, 0, null, null, recordSchema, value, 0);
         String row = sinkTask.getRowFromSinkRecord(sinkRecord);
-        Assert.assertEquals("{\"id\":1,\"name\":null}", row);
+        assertEquals("{\"id\":1,\"name\":null}", row);
     }
 }

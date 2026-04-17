@@ -21,25 +21,19 @@
 package com.starrocks.connector.kafka.json;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.apache.log4j.PropertyConfigurator;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
-public class JsonConverterTest {
-    @Before
-    public void setUp() {
-        PropertyConfigurator.configure("src/test/conf/log4j.properties");
-    }
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
+class JsonConverterTest {
     @Test
-    public void testConvertToJson() throws Exception {
+    void testConvertToJson() throws Exception {
         var jsonStr = "{\"elements\":[{\"elName\":\"zll\",\"age\":1},{\"elName\":\"zll1\",\"age\":2}],\"name\":\"haha\",\"id\":1}";
         var jsonConverter = new JsonConverter();
         var value = new ObjectMapper().readValue(jsonStr, Map.class);
         var result = jsonConverter.fromConnectData(null, value);
-        Assert.assertEquals(jsonStr, result);
+        assertEquals(jsonStr, result);
     }
 }
