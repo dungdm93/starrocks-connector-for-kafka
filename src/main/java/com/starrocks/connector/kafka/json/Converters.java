@@ -34,16 +34,18 @@ public class Converters {
         };
     }
 
+    /// ignored the time part (if any) and return LocalDate in UTC
     public static LocalDate toLocalDate(Object value) {
         return switch (value) {
             // Assume the value is the epoch day number
             case java.lang.Number n -> LocalDate.ofEpochDay(n.longValue());
-            case java.time.LocalDate d -> d;
-            // ignored time part
-            case java.time.LocalDateTime dt -> dt.toLocalDate();
             case java.sql.Time t -> throw new DataException("Date: java.sql.Time not supported");
-            // ignored time part
-            case java.util.Date d -> LocalDate.ofEpochDay(d.getTime() / ONE_DAY.toMillis());
+            case java.util.Date d -> {
+                var n = Math.floorDiv(d.getTime(), ONE_DAY.toMillis());
+                yield LocalDate.ofEpochDay(n);
+            }
+            case java.time.LocalDate d -> d;
+            case java.time.LocalDateTime dt -> dt.toLocalDate(); // ignored time part
             default -> throw new DataException("Date: unsupported type " + value.getClass());
         };
     }
@@ -60,24 +62,25 @@ public class Converters {
         };
     }
 
-    @SuppressWarnings("deprecation")
+    /// ignored the date part (if any) and return LocalTime in UTC
     public static LocalTime toLocalTime(Object value, long precision) {
         return switch (value) {
-            case java.lang.Number n -> LocalTime.ofNanoOfDay(n.longValue() * precision);
-            case java.time.LocalTime t -> t;
-            // ignored date part
-            case java.time.LocalDateTime dt -> dt.toLocalTime();
+            case java.lang.Number n -> {
+                var s = ONE_DAY.toSeconds() * (SECOND / precision);
+                var nano = Math.floorMod(n.longValue(), s) * precision; // truncate the date part
+                yield LocalTime.ofNanoOfDay(nano);
+            }
             case java.sql.Date d -> throw new DataException("Time: java.sql.Date not supported");
-            // separate java.sql.Timestamp from java.util.Date to preserve nanoseconds
-            case java.sql.Timestamp ts -> LocalTime.of(
-                    ts.getHours(), ts.getMinutes(), ts.getSeconds(),
-                    ts.getNanos()
-            );
-            // ignored date part
-            case java.util.Date d -> LocalTime.of(
-                    d.getHours(), d.getMinutes(), d.getSeconds(),
-                    (int) (d.getTime() % 1_000L * MILLI)
-            );
+            case java.sql.Timestamp ts -> {
+                // use `toInstant()` to preserve nanoseconds
+                var i = ts.toInstant();
+                // Instant is not support get NANO_OF_DAY directly
+                var nanos = Math.floorMod(i.getEpochSecond(), ONE_DAY.toSeconds()) * SECOND + i.getNano();
+                yield LocalTime.ofNanoOfDay(nanos);
+            }
+            case java.util.Date d -> toLocalTime(d.getTime(), MILLI);
+            case java.time.LocalTime t -> t;
+            case java.time.LocalDateTime dt -> dt.toLocalTime(); // ignored date part
             case java.time.Duration d -> LocalTime.ofNanoOfDay(d.toNanos());
             default -> throw new DataException("Time: unsupported type " + value.getClass());
         };
@@ -95,21 +98,23 @@ public class Converters {
         };
     }
 
+    /// return LocalDateTime in UTC
     public static LocalDateTime toLocalDateTime(Object value, long precision) {
         return switch (value) {
             case java.lang.Number n -> {
                 var mod = SECOND / precision;
-                var seconds = n.longValue() / mod;
-                var nanos = (n.longValue() % mod) * precision;
+                var seconds = Math.floorDiv(n.longValue(), mod);
+                var nanos = Math.floorMod(n.longValue(), mod) * precision;
                 yield LocalDateTime.ofEpochSecond(seconds, (int) nanos, ZoneOffset.UTC);
             }
+            // use `toInstant()` to preserve nanoseconds
+            case java.sql.Timestamp ts -> LocalDateTime.ofInstant(ts.toInstant(), ZoneOffset.UTC);
+            case java.util.Date d -> toLocalDateTime(d.getTime(), MILLI);
             case java.time.Instant i -> i.atZone(ZoneOffset.UTC).toLocalDateTime();
             case java.time.LocalDate d -> d.atStartOfDay();
             case java.time.LocalTime t -> t.atDate(LocalDate.EPOCH);
             case java.time.LocalDateTime dt -> dt;
             case java.time.OffsetDateTime dt -> dt.atZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
-            case java.sql.Timestamp ts -> ts.toLocalDateTime();
-            case java.util.Date d -> LocalDateTime.ofInstant(d.toInstant(), ZoneOffset.UTC);
             default -> throw new DataException("Timestamp: unsupported type " + value.getClass());
         };
     }
