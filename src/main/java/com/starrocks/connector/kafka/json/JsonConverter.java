@@ -50,7 +50,7 @@ public class JsonConverter {
 
     public JsonConverter() {
         // Kafka logical types.
-        converters.put(org.apache.kafka.connect.data.Decimal.LOGICAL_NAME, Converters::convertDecimal);
+        converters.put(org.apache.kafka.connect.data.Decimal.LOGICAL_NAME, Converters.convertDecimal());
         converters.put(org.apache.kafka.connect.data.Date.LOGICAL_NAME, Converters.forDate());
         converters.put(org.apache.kafka.connect.data.Time.LOGICAL_NAME, Converters.forTime(MILLI));
         converters.put(org.apache.kafka.connect.data.Timestamp.LOGICAL_NAME, Converters.forTimestamp(MILLI));

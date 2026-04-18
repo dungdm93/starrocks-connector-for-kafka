@@ -29,21 +29,22 @@ class ConvertersTest {
 
 
     @Nested
-    class ConvertDecimal {
-        private final JsonConverter converter = new JsonConverter();
-
+    class ToBigDecimal {
         @Test
-        void bigDecimal_returnsNumberNode() {
-            var value = new BigDecimal("123.456");
-            var node = Converters.convertDecimal(null, value, converter);
-            assertEquals(new BigDecimal("123.456"), node.decimalValue());
+        void bigDecimal() {
+            var bd = new BigDecimal("123.456");
+            assertEquals(bd, toBigDecimal(bd));
+
+            double d = 123.456;
+            assertEquals(BigDecimal.valueOf(d), toBigDecimal(d));
+
+            long l = 123456789L;
+            assertEquals(BigDecimal.valueOf(l), toBigDecimal(l));
         }
 
         @Test
         void nonBigDecimal_throws() {
-            assertThrows(DataException.class, () -> {
-                Converters.convertDecimal(null, "not-a-decimal", converter);
-            });
+            assertThrows(DataException.class, () -> toBigDecimal("not-a-decimal"));
         }
     }
 
