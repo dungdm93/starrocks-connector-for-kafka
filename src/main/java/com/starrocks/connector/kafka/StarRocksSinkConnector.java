@@ -57,7 +57,7 @@ public class StarRocksSinkConnector extends SinkConnector {
 
     @Override
     public ConfigDef config() {
-        return StarRocksSinkConnectorConfig.newConfigDef();
+        return StarRocksSinkConfig.CONFIG_DEF;
     }
 
     @Override

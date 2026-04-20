@@ -20,56 +20,6 @@
 
 package com.starrocks.connector.kafka;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.function.Predicate;
-import java.util.regex.Pattern;
-
-import static com.starrocks.connector.kafka.StarRocksSinkConnectorConfig.STARROCKS_TOPIC2TABLE_MAP;
-
 public class Util {
-    private static final Logger LOG = LoggerFactory.getLogger(Util.class);
     public static final String VERSION = "1.0.3";
-    private static final Predicate<String> nameMatcher = Pattern
-            .compile("^([_a-zA-Z][$a-zA-Z0-9]+\\.){0,2}[_a-zA-Z][_$a-zA-Z0-9]+$")
-            .asMatchPredicate();
-
-    public static Map<String, String> parseTopicToTableMap(String input) {
-        var topic2Table = new HashMap<String, String>();
-        var valid = true;
-        for (var str : input.split(",")) {
-            var tt = Arrays.stream(str.split(":"))
-                    .map(String::trim)
-                    .toArray(String[]::new);
-
-            if (tt.length != 2 || tt[0].isEmpty() || tt[1].isEmpty()) {
-                LOG.error("Invalid {} config format: {}", STARROCKS_TOPIC2TABLE_MAP, input);
-                return null;
-            }
-
-            var topic = tt[0];
-            var table = tt[1];
-
-            if (!nameMatcher.test(table)) {
-                LOG.error("table name {} should have at least 2 characters, start with _a-zA-Z, and only contains _$a-zA-z0-9", table);
-                valid = false;
-            }
-
-            if (topic2Table.containsKey(topic)) {
-                LOG.error("topic name {} is duplicated", topic);
-                valid = false;
-            }
-
-            topic2Table.put(topic, table);
-        }
-        if (!valid) {
-            var errMsg = String.format("Invalid %s config format: %s", STARROCKS_TOPIC2TABLE_MAP, input);
-            throw new RuntimeException(errMsg);
-        }
-        return topic2Table;
-    }
 }

@@ -20,6 +20,7 @@
 
 package com.starrocks.connector.kafka;
 
+import com.starrocks.connector.kafka.StarRocksSinkConfig.SinkFormat;
 import com.starrocks.connector.kafka.envelope.DebeziumEnvelope;
 import com.starrocks.connector.kafka.envelope.NoopEnvelope;
 import com.starrocks.connector.kafka.json.JsonConverter;
@@ -62,181 +63,93 @@ import static io.debezium.transforms.ExtractNewRecordStateConfigDefinition.HANDL
 
 public class StarRocksSinkTask extends SinkTask {
     private static final Logger LOG = LoggerFactory.getLogger(StarRocksSinkTask.class);
-    private static final long KILO_BYTES_SCALE = 1024L;
-    private static final long MEGA_BYTES_SCALE = KILO_BYTES_SCALE * KILO_BYTES_SCALE;
-    private static final long GIGA_BYTES_SCALE = MEGA_BYTES_SCALE * KILO_BYTES_SCALE;
 
-    public enum SinkType {
-        CSV,
-        JSON,
-    }
-
-    private SinkType sinkType;
+    private SinkFormat sinkFormat;
     private StreamLoadManagerV2 loadManager;
-    private Map<String, String> props;
+    private StarRocksSinkConfig config;
     private StreamLoadProperties loadProperties;
-    private String database;
-    private Map<String, String> topic2Table;
     private final Map<String, String> streamLoadProps = new HashMap<>();
     private JsonConverter jsonConverter;
-    private long maxRetryTimes;
     private long retryCount = 0;
     private Throwable sdkException;
     private Transformation<SinkRecord> transformation;
 
-    private long buffMaxBytes;
-    private long bufferFlushInterval;
     private long currentBufferBytes = 0;
     private long lastFlushTime = 0;
 
     private StreamLoadManagerV2 buildLoadManager(StreamLoadProperties loadProperties) {
-        StreamLoadManagerV2 manager = new StreamLoadManagerV2(loadProperties, true);
+        var manager = new StreamLoadManagerV2(loadProperties, true);
         manager.init();
         return manager;
     }
 
-    // Data chunk size in an http request for the stream load.
-    // Flink connector does not open this configuration to users, so we use a fixed value here.
-    private long getChunkLimit() {
-        return 3 * GIGA_BYTES_SCALE;
-    }
-
-    // Timeout in millisecond to wait for 100-continue response for the http client.
-    // Flink connector does not open this configuration to users, so we use a fixed value here.
-    private int getWaitForContinueTimeout() {
-        return 3000;
-    }
-
-    // Stream load thread count
-    // An HTTP thread pool is used for communication between the SDK and SR. 
-    // This configuration item is used to set the number of threads in the thread pool.
-    private int getIoThreadCount() {
-        return 2;
-    }
-
-    private long getScanFrequency() {
-        return 50L;
-    }
-
-    private String getLabelPrefix() {
-        return null;
-    }
-
-    private void parseSinkStreamLoadProperties() {
+    private StreamLoadProperties buildLoadProperties(Map<String, String> props) {
+        var dataFormat = switch (config.format) {
+            case CSV -> {
+                var delimiter = StarRocksDelimiterParser.parse(config.rowDelimiter, "\n");
+                yield new StreamLoadDataFormat.CSVFormat(delimiter);
+            }
+            case JSON -> StreamLoadDataFormat.JSON;
+        };
         props.keySet().stream()
-                .filter(key -> key.startsWith(StarRocksSinkConnectorConfig.SINK_PROPERTIES_PREFIX))
-                .forEach(key -> {
-                    final String value = props.get(key);
-                    final String subKey = key.substring((StarRocksSinkConnectorConfig.SINK_PROPERTIES_PREFIX).length()).toLowerCase();
-                    streamLoadProps.put(subKey, value);
-                });
-    }
+                .filter(key -> key.startsWith(StarRocksSinkConfig.SINK_PROPERTIES_PREFIX))
+                .forEach(key -> streamLoadProps.put(
+                        key.substring(StarRocksSinkConfig.SINK_PROPERTIES_PREFIX.length()).toLowerCase(),
+                        props.get(key)));
+        LOG.info("Starrocks sink type is {}, stream load properties: {}", config.format, streamLoadProps);
 
-    private StreamLoadProperties buildLoadProperties() {
-        var loadUrl = props.get(StarRocksSinkConnectorConfig.STARROCKS_LOAD_URL).split(",");
-        database = props.get(StarRocksSinkConnectorConfig.STARROCKS_DATABASE_NAME);
-        var format = props.getOrDefault(StarRocksSinkConnectorConfig.SINK_FORMAT, "json").toLowerCase();
-        StreamLoadDataFormat dataFormat;
-        switch (format) {
-            case "csv" -> {
-                dataFormat = new StreamLoadDataFormat.CSVFormat(StarRocksDelimiterParser
-                        .parse(props.get(StarRocksSinkConnectorConfig.SINK_PROPERTIES_ROW_DELIMITER), "\n"));
-                sinkType = SinkType.CSV;
-            }
-            case "json" -> {
-                dataFormat = StreamLoadDataFormat.JSON;
-                sinkType = SinkType.JSON;
-            }
-            default -> throw new RuntimeException("data format are not support");
-        }
-        // The default load format for the Starrocks Kafka Connector is JSON. If the format is not specified
-        // in the configuration file, it needs to be added to the props.
-        if (!props.containsKey(StarRocksSinkConnectorConfig.SINK_FORMAT)) {
-            props.put(StarRocksSinkConnectorConfig.SINK_FORMAT, "json");
-        }
-        parseSinkStreamLoadProperties();
-        LOG.info("Starrocks sink type is {}, stream load properties: {}", sinkType, streamLoadProps);
         // The Stream SDK must force the table name, which we set to _sr_default_table.
         // _sr_default_table will not be used.
-        buffMaxBytes = Long.parseLong(props.getOrDefault(StarRocksSinkConnectorConfig.BUFFERFLUSH_MAXBYTES, "67108864"));
-        var connectTimeoutms = Integer.parseInt(props.getOrDefault(StarRocksSinkConnectorConfig.CONNECT_TIMEOUTMS, "100"));
-        var username = props.get(StarRocksSinkConnectorConfig.STARROCKS_USERNAME);
-        var password = props.get(StarRocksSinkConnectorConfig.STARROCKS_PASSWORD);
-        bufferFlushInterval = Long.parseLong(props.getOrDefault(StarRocksSinkConnectorConfig.BUFFERFLUSH_INTERVALMS, "1000"));
         return StreamLoadProperties.builder()
-                .loadUrls(loadUrl)
-                .username(username)
-                .password(password)
+                .loadUrls(config.loadUrl)
+                .username(config.username)
+                .password(config.password)
                 .defaultTableProperties(StreamLoadTableProperties.builder()
-                        .database(database)
+                        .database(config.database)
                         .table("_sr_default_table")
                         .streamLoadDataFormat(dataFormat)
-                        .chunkLimit(getChunkLimit())
+                        .chunkLimit(3L << 30) // 3GiB
                         .addCommonProperties(streamLoadProps)
                         .build())
-                .cacheMaxBytes(buffMaxBytes)
-                .connectTimeout(connectTimeoutms)
-                .waitForContinueTimeoutMs(getWaitForContinueTimeout())
-                .ioThreadCount(getIoThreadCount())
-                .scanningFrequency(getScanFrequency())
-                .labelPrefix(getLabelPrefix())
-                .expectDelayTime(bufferFlushInterval)
+                .cacheMaxBytes(config.bufferMaxBytes)
+                .connectTimeout(config.connectTimeoutMs)
+                .waitForContinueTimeoutMs(3_000) // 3s
+                .ioThreadCount(2)
+                .labelPrefix(null)
+                .expectDelayTime(config.bufferFlushIntervalMs)
                 .addHeaders(streamLoadProps)
                 .enableTransaction()
                 .build();
     }
 
     @Override
-    public String version() {
-        return Util.VERSION;
-    }
-
-    @Override
     public void start(Map<String, String> props) {
         LOG.info("Starrocks sink task starting. version is {}", Util.VERSION);
-        this.props = props;
-        loadProperties = buildLoadProperties();
+        config = new StarRocksSinkConfig(props);
+        sinkFormat = config.format;
+        loadProperties = buildLoadProperties(props);
         loadManager = buildLoadManager(loadProperties);
-        topic2Table = getTopicToTableMap(props);
         jsonConverter = new JsonConverter();
-        maxRetryTimes = Long.parseLong(props.getOrDefault(StarRocksSinkConnectorConfig.SINK_MAXRETRIES, "3"));
         transformation = new NoopEnvelope<>();
-        var envelope = props.getOrDefault(StarRocksSinkConnectorConfig.ENVELOPE, "none").toLowerCase();
-        var deleteEnabled = props.getOrDefault(StarRocksSinkConnectorConfig.DELETE_ENABLE, "false").toLowerCase();
-        if ("debezium".equals(envelope)) {
+        if (config.envelope == StarRocksSinkConfig.Envelope.DEBEZIUM) {
             transformation = new DebeziumEnvelope<>();
-            if (deleteEnabled.equals("true")) {
-                props.put(HANDLE_TOMBSTONE_DELETES.name(), DeleteTombstoneHandling.REWRITE.getValue());
-            } else {
-                props.put(HANDLE_TOMBSTONE_DELETES.name(), DeleteTombstoneHandling.DROP.getValue());
-            }
-            transformation.configure(props);
+            var transformConfig = new HashMap<>(props);
+            transformConfig.put(HANDLE_TOMBSTONE_DELETES.name(),
+                    config.deleteEnabled
+                            ? DeleteTombstoneHandling.REWRITE.getValue()
+                            : DeleteTombstoneHandling.DROP.getValue()
+            );
+            transformation.configure(transformConfig);
         }
         LOG.info("Starrocks sink task started. version is {}", Util.VERSION);
-    }
-
-    static Map<String, String> getTopicToTableMap(Map<String, String> config) {
-        if (config.containsKey(StarRocksSinkConnectorConfig.STARROCKS_TOPIC2TABLE_MAP)) {
-            Map<String, String> result =
-                    Util.parseTopicToTableMap(config.get(StarRocksSinkConnectorConfig.STARROCKS_TOPIC2TABLE_MAP));
-            if (result != null) {
-                return result;
-            }
-            LOG.error("Invalid Input, Topic2Table Map disabled");
-        }
-        return new HashMap<>();
-    }
-
-    private String getTableFromTopic(String topic) {
-        return topic2Table.getOrDefault(topic, topic);
     }
 
     public void setJsonConverter(JsonConverter jsonConverter) {
         this.jsonConverter = jsonConverter;
     }
 
-    public void setSinkType(SinkType sinkType) {
-        this.sinkType = sinkType;
+    public void setSinkType(SinkFormat sinkFormat) {
+        this.sinkFormat = sinkFormat;
     }
 
     // This function is used to parse a SinkRecord and returns a String type row.
@@ -259,7 +172,7 @@ public class StarRocksSinkTask extends SinkTask {
             LOG.debug("Sink record value schema is null, the record is {}", sinkRecord);
         }
 
-        if (sinkType == SinkType.CSV) {
+        if (sinkFormat == SinkFormat.CSV) {
             // When the sink Type is CSV, make sure that the SinkRecord.value type is String
             if (!(sinkRecord.value() instanceof String row)) {
                 var msg = String.format("class %s cannot be cast to String", sinkRecord.value().getClass().getName());
@@ -280,9 +193,9 @@ public class StarRocksSinkTask extends SinkTask {
     @Override
     public void put(Collection<SinkRecord> records) {
         long start = System.currentTimeMillis();
-        if (maxRetryTimes != -1) {
-            if (retryCount > maxRetryTimes) {
-                LOG.error("Starrocks Put failure {} times, which bigger than maxRetryTimes {}, sink task will be stopped", retryCount, maxRetryTimes);
+        if (config.maxRetries != -1) {
+            if (retryCount > config.maxRetries) {
+                LOG.error("Starrocks Put failure {} times, which bigger than maxRetryTimes {}, sink task will be stopped", retryCount, config.maxRetries);
                 assert sdkException != null;
                 LOG.error("Error message is ", sdkException);
                 throw new RuntimeException(sdkException);
@@ -317,7 +230,8 @@ public class StarRocksSinkTask extends SinkTask {
             if (row == null) continue;
 
             try {
-                loadManager.write(null, database, getTableFromTopic(topic), row);
+                var table = config.topic2Table.getOrDefault(topic, topic);
+                loadManager.write(null, config.database, table, row);
                 currentBufferBytes += row.getBytes().length;
             } catch (Exception writeException) {
                 LOG.error("Starrocks Put error: {} topic, partition, offset is {}, {}, {}", writeException.getMessage(), topic, record.kafkaPartition(), record.kafkaOffset());
@@ -348,11 +262,11 @@ public class StarRocksSinkTask extends SinkTask {
     @Override
     public Map<TopicPartition, OffsetAndMetadata> preCommit(Map<TopicPartition, OffsetAndMetadata> offsets) {
         long start = System.currentTimeMillis();
-        // return previous offset when buffer size and flush interval are not reached
-        if (currentBufferBytes < buffMaxBytes && System.currentTimeMillis() - lastFlushTime < bufferFlushInterval) {
+        // return the previous offset when buffer size and flush interval are not reached
+        if (currentBufferBytes < config.bufferMaxBytes && System.currentTimeMillis() - lastFlushTime < config.bufferFlushIntervalMs) {
             LOG.info("Starrocks skip preCommit currentBufferBytes {} less than buffMaxbytes {}"
                             + " or SinceLastFlushTime {} less than bufferFlushInterval {}",
-                    currentBufferBytes, buffMaxBytes, System.currentTimeMillis() - lastFlushTime, bufferFlushInterval);
+                    currentBufferBytes, config.bufferMaxBytes, System.currentTimeMillis() - lastFlushTime, config.bufferFlushIntervalMs);
             return Collections.emptyMap();
         }
         Throwable flushException = null;
@@ -399,5 +313,10 @@ public class StarRocksSinkTask extends SinkTask {
             transformation.close();
         }
         LOG.info("Starrocks sink task stopped. version is {}", Util.VERSION);
+    }
+
+    @Override
+    public String version() {
+        return Util.VERSION;
     }
 }
