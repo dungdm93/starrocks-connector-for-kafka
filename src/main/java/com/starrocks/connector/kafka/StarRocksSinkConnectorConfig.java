@@ -109,7 +109,7 @@ public class StarRocksSinkConnectorConfig {
                         GroupName, 1,
                         Width.NONE, STARROCKS_USERNAME
                 ).define(
-                        STARROCKS_PASSWORD, Type.STRING, null,
+                        STARROCKS_PASSWORD, Type.PASSWORD, null,
                         null,
                         Importance.HIGH,
                         "StarRocks password",
