@@ -62,12 +62,11 @@ public class StarRocksSinkTask extends SinkTask {
     private StreamLoadManagerV2 loadManager;
     private StarRocksSinkConfig config;
     private StreamLoadProperties loadProperties;
-    private final Map<String, String> streamLoadProps = new HashMap<>();
     private JsonConverter jsonConverter;
-    private long retryCount = 0;
-    private Throwable sdkException;
     private Transformation<SinkRecord> transformation;
 
+    private long retryCount = 0;
+    private Throwable sdkException;
     private long currentBufferBytes = 0;
     private long lastFlushTime = 0;
 
@@ -77,7 +76,7 @@ public class StarRocksSinkTask extends SinkTask {
         return manager;
     }
 
-    private StreamLoadProperties buildLoadProperties(Map<String, String> props) {
+    private StreamLoadProperties buildLoadProperties() {
         var dataFormat = switch (config.format) {
             case CSV -> {
                 var delimiter = StarRocksDelimiterParser.parse(config.rowDelimiter, "\n");
@@ -85,12 +84,7 @@ public class StarRocksSinkTask extends SinkTask {
             }
             case JSON -> StreamLoadDataFormat.JSON;
         };
-        props.keySet().stream()
-                .filter(key -> key.startsWith(StarRocksSinkConfig.SINK_PROPERTIES_PREFIX))
-                .forEach(key -> streamLoadProps.put(
-                        key.substring(StarRocksSinkConfig.SINK_PROPERTIES_PREFIX.length()).toLowerCase(),
-                        props.get(key)));
-        LOG.info("Starrocks sink type is {}, stream load properties: {}", config.format, streamLoadProps);
+        LOG.info("Starrocks sink type is {}, stream load properties: {}", config.format, config.streamLoadProps);
 
         // The Stream SDK must force the table name, which we set to _sr_default_table.
         // _sr_default_table will not be used.
@@ -103,7 +97,7 @@ public class StarRocksSinkTask extends SinkTask {
                         .table("_sr_default_table")
                         .streamLoadDataFormat(dataFormat)
                         .chunkLimit(3L << 30) // 3GiB
-                        .addCommonProperties(streamLoadProps)
+                        .addCommonProperties(config.streamLoadProps)
                         .build())
                 .cacheMaxBytes(config.bufferMaxBytes)
                 .connectTimeout(config.connectTimeoutMs)
@@ -111,7 +105,7 @@ public class StarRocksSinkTask extends SinkTask {
                 .ioThreadCount(2)
                 .labelPrefix(null)
                 .expectDelayTime(config.bufferFlushIntervalMs)
-                .addHeaders(streamLoadProps)
+                .addHeaders(config.streamLoadProps)
                 .enableTransaction()
                 .build();
     }
@@ -121,7 +115,7 @@ public class StarRocksSinkTask extends SinkTask {
         LOG.info("Starrocks sink task starting. version is {}", Util.VERSION);
         config = new StarRocksSinkConfig(props);
         sinkFormat = config.format;
-        loadProperties = buildLoadProperties(props);
+        loadProperties = buildLoadProperties();
         loadManager = buildLoadManager(loadProperties);
         jsonConverter = new JsonConverter();
         LOG.info("Starrocks sink task started. version is {}", Util.VERSION);
