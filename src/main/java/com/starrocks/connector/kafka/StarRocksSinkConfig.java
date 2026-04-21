@@ -36,6 +36,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public class StarRocksSinkConfig extends AbstractConfig {
     private static final Logger LOG = LoggerFactory.getLogger(StarRocksSinkConfig.class);
@@ -254,6 +255,7 @@ public class StarRocksSinkConfig extends AbstractConfig {
     public final boolean deleteEnabled;
     public final SinkFormat format;
     public final String rowDelimiter;
+    public final Map<String, String> streamLoadProps;
     public final long bufferMaxBytes;
     public final long bufferFlushIntervalMs;
     public final int connectTimeoutMs;
@@ -270,6 +272,11 @@ public class StarRocksSinkConfig extends AbstractConfig {
         deleteEnabled = getBoolean(DELETE_ENABLED_CONFIG);
         format = SinkFormat.valueOf(getString(FORMAT_CONFIG).toUpperCase());
         rowDelimiter = getString(ROW_DELIMITER_CONFIG);
+        streamLoadProps = originalsWithPrefix(SINK_PROPERTIES_PREFIX, true).entrySet().stream()
+                .collect(Collectors.toUnmodifiableMap(
+                        e -> e.getKey().toLowerCase(),
+                        e -> String.valueOf(e.getValue())
+                ));
         bufferMaxBytes = getLong(BUFFER_MAX_BYTES_CONFIG);
         bufferFlushIntervalMs = getLong(BUFFER_FLUSH_INTERVAL_MS_CONFIG);
         connectTimeoutMs = getInt(CONNECT_TIMEOUT_MS_CONFIG);
