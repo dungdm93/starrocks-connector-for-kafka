@@ -131,7 +131,7 @@ public class StarRocksSinkConfig extends AbstractConfig {
     private static final String BUFFER_FLUSH_INTERVAL_MS_DISPLAY = "Buffer Flush Interval (ms)";
 
     public static final String CONNECT_TIMEOUT_MS_CONFIG = "connect.timeoutms";
-    public static final long CONNECT_TIMEOUT_MS_DEFAULT = 100;
+    public static final int CONNECT_TIMEOUT_MS_DEFAULT = 100;
     private static final String CONNECT_TIMEOUT_MS_DOC =
             "Timeout (in milliseconds) for connecting to the load URL. Valid values: 100 to 60000.";
     private static final String CONNECT_TIMEOUT_MS_DISPLAY = "Connection Timeout (ms)";
