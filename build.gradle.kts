@@ -1,9 +1,10 @@
 plugins {
     java
+    distribution
 }
 
 group = "com.starrocks"
-version = "1.0.5"
+version = "1.0.7"
 
 java {
     toolchain {
@@ -25,9 +26,9 @@ dependencies {
     implementation(platform("io.debezium:debezium-bom:3.5.0.Final"))
 
     // Kafka Connect dependencies
-    implementation("org.apache.kafka:connect-api")
-    implementation("org.apache.kafka:connect-transforms")
-    implementation("org.apache.kafka:connect-runtime")
+    compileOnly("org.apache.kafka:connect-api")
+    compileOnly("org.apache.kafka:connect-transforms")
+    // implementation("org.apache.kafka:connect-runtime")
 
     // Debezium dependencies
     implementation("io.debezium:debezium-connect-plugins")
@@ -38,9 +39,9 @@ dependencies {
     implementation("com.fasterxml.jackson.core:jackson-databind")
     implementation("com.fasterxml.jackson.core:jackson-annotations")
 
-    implementation("ch.qos.logback:logback-classic:1.5.32")
-    implementation("io.confluent:kafka-connect-avro-converter:8.2.0") {
-        exclude(group="org.apache.kafka", module="*")
+    compileOnly("ch.qos.logback:logback-classic:1.5.32")
+    compileOnly("io.confluent:kafka-connect-avro-converter:8.2.0") {
+        exclude(group = "org.apache.kafka", module = "*")
     }
 
     // Other dependencies
@@ -56,4 +57,23 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+distributions {
+    main {
+        distributionBaseName = "starrocks-connector-for-kafka"
+        contents {
+            from(tasks.jar)
+            from(configurations.runtimeClasspath)
+            exclude("slf4j-*.jar")
+            exclude("commons-logging-*.jar")
+            exclude("kafka-clients-*.jar")
+            exclude("connect-api-*.jar")
+            exclude("jackson-*.jar")
+            exclude("jakarta.*.jar")
+            exclude("lz4-*.jar")
+            exclude("zstd-*.jar")
+            exclude("snappy-*.jar")
+        }
+    }
 }
