@@ -24,6 +24,7 @@ import com.starrocks.connector.kafka.StarRocksSinkConfig.SinkFormat;
 import com.starrocks.connector.kafka.envelope.DebeziumEnvelope;
 import com.starrocks.connector.kafka.envelope.NoopEnvelope;
 import com.starrocks.connector.kafka.json.JsonConverter;
+import com.starrocks.connector.kafka.json.JsonConverterConfig;
 import com.starrocks.data.load.stream.StreamLoadDataFormat;
 import com.starrocks.data.load.stream.properties.StreamLoadProperties;
 import com.starrocks.data.load.stream.properties.StreamLoadTableProperties;
@@ -116,6 +117,11 @@ public class StarRocksSinkTask extends SinkTask {
                 .build();
     }
 
+    private JsonConverter buildJsonConverter(Map<String, String> props) {
+        var config = new JsonConverterConfig(props);
+        return new JsonConverter(config);
+    }
+
     @Override
     public void start(Map<String, String> props) {
         LOG.info("Starrocks sink task starting. version is {}", Util.VERSION);
@@ -123,7 +129,7 @@ public class StarRocksSinkTask extends SinkTask {
         sinkFormat = config.format;
         loadProperties = buildLoadProperties();
         loadManager = buildLoadManager(loadProperties);
-        jsonConverter = new JsonConverter();
+        jsonConverter = buildJsonConverter(props);
         transformation = new NoopEnvelope<>();
         if (config.envelope == StarRocksSinkConfig.Envelope.DEBEZIUM) {
             transformation = new DebeziumEnvelope<>();

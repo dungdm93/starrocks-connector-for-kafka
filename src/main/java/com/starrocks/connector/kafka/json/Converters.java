@@ -150,4 +150,22 @@ public class Converters {
             default -> throw new DataException("Timestamp: unsupported type " + value.getClass());
         };
     }
+
+    /// Convert json to generic JsonNode
+    ///
+    /// @see io.debezium.data.Json
+    public static LogicalTypeConverter forJson() {
+        return (Schema schema, Object object, JsonConverter converter) -> {
+            try {
+                var mapper = converter.mapper();
+                return switch (object) {
+                    case byte[] b -> mapper.readTree(b);
+                    case CharSequence s -> mapper.readTree(s.toString());
+                    default -> mapper.valueToTree(object);
+                };
+            } catch (Exception e) {
+                throw new DataException("Json: " + e.getMessage(), e);
+            }
+        };
+    }
 }

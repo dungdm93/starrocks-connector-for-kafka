@@ -21,6 +21,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.starrocks.connector.kafka.json.JsonConverterConfig.JsonHandlingMode;
 import org.apache.kafka.connect.data.ConnectSchema;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.Struct;
@@ -49,6 +50,10 @@ public class JsonConverter {
     }
 
     public JsonConverter() {
+        this(new JsonConverterConfig());
+    }
+
+    public JsonConverter(JsonConverterConfig config) {
         // Kafka logical types.
         converters.put(org.apache.kafka.connect.data.Decimal.LOGICAL_NAME, Converters.convertDecimal());
         converters.put(org.apache.kafka.connect.data.Date.LOGICAL_NAME, Converters.forDate());
@@ -67,6 +72,10 @@ public class JsonConverter {
         converters.put(io.debezium.time.NanoTimestamp.SCHEMA_NAME, Converters.forTimestamp(NANO));
 
         // Zoned(Time|TimeStamp), Iso(Date|Time|Timestamp) keep as is string
+
+        if (config.jsonHandlingMode == JsonHandlingMode.JSON) {
+            converters.put(io.debezium.data.Json.LOGICAL_NAME, Converters.forJson());
+        }
     }
 
     public String fromConnectData(Schema schema, Object object) {
@@ -172,5 +181,9 @@ public class JsonConverter {
 
     public JsonNodeFactory nodeFactory() {
         return jsonNodeFactory;
+    }
+
+    public ObjectMapper mapper() {
+        return jsonMapper;
     }
 }
