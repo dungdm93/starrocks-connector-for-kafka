@@ -73,6 +73,8 @@ public class JsonConverter {
 
         // Zoned(Time|TimeStamp), Iso(Date|Time|Timestamp) keep as is string
 
+        converters.put(io.debezium.data.Uuid.LOGICAL_NAME, Converters.forUuid(config.uuidHandlingMode));
+
         if (config.jsonHandlingMode == JsonHandlingMode.JSON) {
             converters.put(io.debezium.data.Json.LOGICAL_NAME, Converters.forJson());
         }

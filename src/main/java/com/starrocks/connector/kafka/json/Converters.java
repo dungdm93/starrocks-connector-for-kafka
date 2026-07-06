@@ -1,14 +1,18 @@
 package com.starrocks.connector.kafka.json;
 
 import com.starrocks.connector.kafka.json.JsonConverter.LogicalTypeConverter;
+import com.starrocks.connector.kafka.json.JsonConverterConfig.UuidHandlingMode;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.DataException;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.HexFormat;
 
 import static java.time.LocalDate.EPOCH;
 import static java.time.ZoneOffset.UTC;
@@ -21,6 +25,7 @@ public class Converters {
     public static final long MILLI = 1_000_000;
     public static final long SECOND = 1_000_000_000;
 
+    /// Returns a logical type converter that writes decimal values as JSON numbers.
     public static LogicalTypeConverter convertDecimal() {
         return (schema, value, converter) -> {
             var decimal = toBigDecimal(value);
@@ -28,6 +33,7 @@ public class Converters {
         };
     }
 
+    /// Converts supported numeric values to {@link BigDecimal}.
     public static BigDecimal toBigDecimal(Object value) {
         return switch (value) {
             case java.math.BigDecimal d -> d;
@@ -149,6 +155,77 @@ public class Converters {
                     .toLocalDateTime();
             default -> throw new DataException("Timestamp: unsupported type " + value.getClass());
         };
+    }
+
+
+    /// Returns a logical type converter that writes UUID values using the configured handling mode.
+    public static LogicalTypeConverter forUuid(UuidHandlingMode mode) {
+        return switch (mode) {
+            case HEX -> (schema, value, converter) -> {
+                var s = uuidToHex(value, false);
+                return converter.nodeFactory().textNode(s);
+            };
+            case HEX_DASH -> (schema, value, converter) -> {
+                var s = uuidToHex(value, true);
+                return converter.nodeFactory().textNode(s);
+            };
+            case BINARY -> (schema, value, converter) -> {
+                var b = uuidToBytes(value);
+                return converter.nodeFactory().binaryNode(b);
+            };
+            case LARGEINT -> (schema, value, converter) -> {
+                var bi = uuidToLargeInt(value);
+                return converter.nodeFactory().numberNode(bi);
+            };
+        };
+    }
+
+    /// Converts a UUID value to hexadecimal text, optionally with RFC-4122 dashes.
+    public static String uuidToHex(Object value, boolean dash) {
+        return switch (value) {
+            case java.lang.String s -> { // assume s is valid UUID format
+                var containsDash = s.indexOf('-') >= 0;
+                if (containsDash == dash) yield s;
+                if (containsDash) yield s.replace("-", "");
+
+                var sb = new StringBuilder(s);
+                sb.insert(20, '-');
+                sb.insert(16, '-');
+                sb.insert(12, '-');
+                sb.insert(8, '-');
+                yield sb.toString();
+            }
+            case java.util.UUID u -> {
+                var s = u.toString();
+                if (!dash) {
+                    s = s.replace("-", "");
+                }
+                yield s;
+            }
+            default -> throw new DataException("UUID: unsupported type " + value.getClass());
+        };
+    }
+
+    /// Converts a UUID value to its 16-byte big-endian representation.
+    public static byte[] uuidToBytes(Object value) {
+        return switch (value) {
+            case java.lang.String s -> { // assume s is valid UUID format
+                s = s.replace("-", "");
+                yield HexFormat.of().parseHex(s);
+            }
+            case java.util.UUID u -> {
+                var bb = ByteBuffer.allocate(16);
+                bb.putLong(u.getMostSignificantBits());
+                bb.putLong(u.getLeastSignificantBits());
+                yield bb.array();
+            }
+            default -> throw new DataException("UUID: unsupported type " + value.getClass());
+        };
+    }
+
+    /// Converts a UUID value to an unsigned 128-bit decimal suitable for LARGEINT columns.
+    public static BigInteger uuidToLargeInt(Object value) {
+        return new BigInteger(1, uuidToBytes(value));
     }
 
     /// Convert json to generic JsonNode

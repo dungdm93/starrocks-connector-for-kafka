@@ -5,18 +5,24 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.FieldSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.*;
+import java.util.HexFormat;
+import java.util.stream.Stream;
 import java.util.TimeZone;
+import java.util.UUID;
 
 import static com.starrocks.connector.kafka.json.Converters.*;
 import static java.time.ZoneOffset.UTC;
 import static java.time.temporal.ChronoUnit.MICROS;
 import static java.time.temporal.ChronoUnit.MILLIS;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 class ConvertersTest {
     private static final LocalDate DATE = LocalDate.of(2024, 6, 15);
@@ -29,8 +35,27 @@ class ConvertersTest {
     private static final ZoneOffset UTC7 = ZoneOffset.ofHours(7);
     private static final ZoneId HCM = ZoneId.of("Asia/Ho_Chi_Minh");
 
+    private static final String UUID_DASH = "123e4567-e89b-12d3-a456-426614174000";
+    private static final String UUID_HEX = "123e4567e89b12d3a456426614174000";
+    private static final UUID UUID_VALUE = UUID.fromString(UUID_DASH);
+
     // parameterized test data
     static final String[] timezones = {"UTC", "Asia/Ho_Chi_Minh"};
+
+    static Stream<org.junit.jupiter.params.provider.Arguments> uuidLargeInts() {
+        return Stream.of(
+                arguments("00000000-0000-0000-0000-000000000000", BigInteger.ZERO),
+                arguments("00000000-0000-0000-0000-000000000001", BigInteger.ONE),
+                arguments("00000000-0000-0000-0000-000000000010", new BigInteger("16")),
+                arguments("00000000-0000-0000-0000-0000000000ff", new BigInteger("255")),
+                arguments("00000000-0000-0000-0000-000000010000", new BigInteger("65536")),
+                arguments("00000000-0000-0000-0000-ffffffffffff", new BigInteger("281474976710655")),
+                arguments("00000000-0000-0000-0001-000000000000", new BigInteger("281474976710656")),
+                arguments("00000000-0000-0001-0000-000000000000", new BigInteger("18446744073709551616")),
+                arguments("80000000-0000-0000-0000-000000000000", new BigInteger("170141183460469231731687303715884105728")),
+                arguments("ffffffff-ffff-ffff-ffff-ffffffffffff", new BigInteger("340282366920938463463374607431768211455"))
+        );
+    }
 
     @Nested
     class ToBigDecimal {
@@ -372,6 +397,81 @@ class ConvertersTest {
         @Test
         void unsupportedType_throws() {
             assertThrows(DataException.class, () -> toLocalDateTime("unsupported", MILLI));
+        }
+    }
+
+    @Nested
+    class UuidToHex {
+        @Test
+        void stringWithDash() {
+            assertEquals(UUID_DASH, uuidToHex(UUID_DASH, true));
+            assertEquals(UUID_HEX, uuidToHex(UUID_DASH, false));
+        }
+
+        @Test
+        void stringWithoutDash() {
+            assertEquals(UUID_DASH, uuidToHex(UUID_HEX, true));
+            assertEquals(UUID_HEX, uuidToHex(UUID_HEX, false));
+        }
+
+        @Test
+        void uuid() {
+            assertEquals(UUID_DASH, uuidToHex(UUID_VALUE, true));
+            assertEquals(UUID_HEX, uuidToHex(UUID_VALUE, false));
+        }
+
+        @Test
+        void unsupportedType_throws() {
+            assertThrows(DataException.class, () -> uuidToHex(1, true));
+        }
+    }
+
+    @Nested
+    class UuidToBytes {
+        @Test
+        void stringWithDash() {
+            assertArrayEquals(HexFormat.of().parseHex(UUID_HEX), uuidToBytes(UUID_DASH));
+        }
+
+        @Test
+        void stringWithoutDash() {
+            assertArrayEquals(HexFormat.of().parseHex(UUID_HEX), uuidToBytes(UUID_HEX));
+        }
+
+        @Test
+        void uuid() {
+            assertArrayEquals(HexFormat.of().parseHex(UUID_HEX), uuidToBytes(UUID_VALUE));
+        }
+
+        @Test
+        void unsupportedType_throws() {
+            assertThrows(DataException.class, () -> uuidToBytes(1));
+        }
+    }
+
+    @Nested
+    class UuidToLargeInt {
+        @ParameterizedTest(name = "{0}")
+        @MethodSource("com.starrocks.connector.kafka.json.ConvertersTest#uuidLargeInts")
+        void stringWithDash(String uuid, BigInteger expected) {
+            assertEquals(expected, uuidToLargeInt(uuid));
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @MethodSource("com.starrocks.connector.kafka.json.ConvertersTest#uuidLargeInts")
+        void uuid(String uuid, BigInteger expected) {
+            assertEquals(expected, uuidToLargeInt(UUID.fromString(uuid)));
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @MethodSource("com.starrocks.connector.kafka.json.ConvertersTest#uuidLargeInts")
+        void stringWithoutDash(String uuid, BigInteger expected) {
+            assertEquals(expected, uuidToLargeInt(uuid.replace("-", "")));
+        }
+
+        @Test
+        void unsupportedType_throws() {
+            assertThrows(DataException.class, () -> uuidToLargeInt(1));
         }
     }
 }
