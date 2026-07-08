@@ -37,7 +37,7 @@ public class JsonConverterConfig extends AbstractConfig {
                     + "``hex`` writes 32 hexadecimal characters without dashes. "
                     + "``hex_dash`` (default) writes the standard RFC-4122 string with dashes. "
                     + "``binary`` writes the 16-byte big-endian representation. "
-                    + "``largeint`` writes the UUID as an unsigned 128-bit decimal string.";
+                    + "``largeint`` writes the UUID as an signed 128-bit number, value in range [-2^127, 2^127 - 1].";
     private static final String UUID_HANDLING_MODE_DISPLAY = "UUID Handling Mode";
 
     private static final String GROUP = "Json Converter";

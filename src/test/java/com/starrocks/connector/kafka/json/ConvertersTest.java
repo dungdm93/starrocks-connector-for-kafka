@@ -52,8 +52,9 @@ class ConvertersTest {
                 arguments("00000000-0000-0000-0000-ffffffffffff", new BigInteger("281474976710655")),
                 arguments("00000000-0000-0000-0001-000000000000", new BigInteger("281474976710656")),
                 arguments("00000000-0000-0001-0000-000000000000", new BigInteger("18446744073709551616")),
-                arguments("80000000-0000-0000-0000-000000000000", new BigInteger("170141183460469231731687303715884105728")),
-                arguments("ffffffff-ffff-ffff-ffff-ffffffffffff", new BigInteger("340282366920938463463374607431768211455"))
+                arguments("7fffffff-ffff-ffff-ffff-ffffffffffff", new BigInteger("170141183460469231731687303715884105727")),
+                arguments("80000000-0000-0000-0000-000000000000", new BigInteger("-170141183460469231731687303715884105728")),
+                arguments("ffffffff-ffff-ffff-ffff-ffffffffffff", new BigInteger("-1"))
         );
     }
 

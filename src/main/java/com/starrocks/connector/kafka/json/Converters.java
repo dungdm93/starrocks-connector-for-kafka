@@ -223,9 +223,9 @@ public class Converters {
         };
     }
 
-    /// Converts a UUID value to an unsigned 128-bit decimal suitable for LARGEINT columns.
+    /// Converts a UUID value to a signed 128-bit decimal [-2^127, 2^127 - 1] suitable for LARGEINT columns.
     public static BigInteger uuidToLargeInt(Object value) {
-        return new BigInteger(1, uuidToBytes(value));
+        return new BigInteger(uuidToBytes(value));
     }
 
     /// Convert json to generic JsonNode
